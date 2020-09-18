@@ -1,0 +1,28 @@
+Temporal encoder test plan:
+
+1) mode predict
+	- put it into mode_predict
+	- give it a series of randomly generated spatial vectors
+	- after 3 vectors have been input, start checking outputs
+	- do so for N cycles
+
+2) mode train
+	- put it into mode_train
+	- give it a series of randomly generated spatial vectors
+	- after a random number of spatial vectors (between 3 and MAX_BUNDLE_CYCLES), change to mode_predict and check for outputs
+	- loop for N cycles, with different labels each time
+
+3) mode train with new label
+	- put it into mode_train
+	- give it a series of randomly generated spatial vectors
+	- after a random number of spatial vectors (between 3 and MAX_BUNDLE_CYCLES), change input label and check for outputs
+	- loop for N cycles, with different labels each time
+
+4) switch modes
+	- put into mode_predict
+	- give it a series of randomly generated spatial vectors
+	- after 3 vectors have been input, start checking outputs, which can be precomputed
+	- put into mode_train
+	- after a random number of spatial vectors (between 3 and MAX_BUNDLE_CYCLES), change input label and check for outputs
+	- put into mode_predict
+	- check outputs
