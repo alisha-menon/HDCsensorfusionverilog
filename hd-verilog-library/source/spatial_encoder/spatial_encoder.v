@@ -12,38 +12,12 @@ module spatial_encoder
 	// inputs
 	input [`MODE_WIDTH-1:0] ModeIn_SI,
 	input [`LABEL_WIDTH-1:0] LabelIn_DI, 
-	input [0:`CHANNEL_WIDTH*`INPUT_CHANNELS-1] ChannelsInput_DI,
+	input [`CHANNEL_WIDTH*`INPUT_CHANNELS-1:0] ChannelsIn_DI,
 
 	// outputs
 	output [`MODE_WIDTH-1:0] ModeOut_SO,
 	output [`LABEL_WIDTH-1:0] LabelOut_DO,
-	output [0:`HV_DIMENSION-1] HypervectorOut_DO,
-
-	//SRAM
-	//sram1 = iM1, modality 1 - IMOut_mod1_D
-	//sram2 = projm1_neg, modality 1 - projM_mod1_neg
-	//sram3 = projm1_pos, modality 1 - projM_mod1_pos
-	//sram4 = iM2, modality 2 - IMOut_mod2_D
-	//sram5 = projm2_neg, modality 2 - projM_mod2_neg
-	//sram6 = projm2_pos, modality 2 - projM_mod2_pos
-	//sram7 = iM3, modality 3 - IMOut_mod3_D
-	//sram8 = projm3_neg, modality 3 - projM_mod3_neg
-	//sram9 = projm3_pos, modality 3 - projM_mod3_pos
-	input sram1_ready, sram1_valid,
-	input sram2_ready, sram2_valid,
-	input sram3_ready, sram3_valid,
-	input sram4_ready, sram4_valid,
-	input sram5_ready, sram5_valid, 
-	input sram6_ready, sram6_valid,
-	input sram7_ready, sram7_valid,
-	input sram8_ready, sram8_valid,
-	input sram9_ready, sram9_valid,
-	input [0:`HV_DIMENSION-1] IMOut_mod1_D, IMOut_mod2_D, IMOut_mod3_D,
-	input [0:`HV_DIMENSION-1] projM_mod1_neg, projM_mod2_neg, projM_mod3_neg, 
-	input [0:`HV_DIMENSION-1] projM_mod1_pos, projM_mod2_pos, projM_mod3_pos,
-	output spatial_ready, spatial_valid,
-	// use same address for each iM, projM_neg and projM_pos for the corresponding modality
-	output [`ceilLog2(`INPUT_CHANNELS)-1:0] addr_mod1, addr_mod2, addr_mod3
+	output [0:`HV_DIMENSION-1] HypervectorOut_DO
 );
 
 // FSM state definitions
@@ -54,7 +28,7 @@ localparam CHANNELS_MAPPED = 3;
 
 // FSM and control signals
 reg [1:0] prev_state, next_state;
-reg InputBuffersEN_S, AccumulatorEN_mod1_S, AccumulatorEN_mod2_S, AccumulatorEN_mod3_S, CellAutoEN_S, CellAutoCLR_S, CycleCntrEN_S, CycleCntrCLR_S;
+reg InputBuffersEN_S, AccumulatorEN_S, CellAutoEN_S, CellAutoCLR_S, CycleCntrEN_S, CycleCntrCLR_S;
 reg FirstHypervector_S;
 wire LastChannel_S;
 
@@ -71,16 +45,9 @@ reg [`MODE_WIDTH-1:0] ModeIn_SP;
 reg [`LABEL_WIDTH-1:0] LabelIn_DP;
 reg [`CHANNEL_WIDTH-1:0] ChannelsIn_DP [0:`INPUT_CHANNELS-1];
 
-wire [`CHANNEL_WIDTH-1:0] ChannelFeature_mod1_D, ChannelFeature_mod2_D, ChannelFeature_mod3_D;
+wire [`CHANNEL_WIDTH-1:0] ChannelFeature_D;
 
-//wire [0:`HV_DIMENSION-1] IMOut_mod1_D, IMOut_mod2_D, IMOut_mod3_D;
-//wire [0:`HV_DIMENSION-1] projM_mod1_neg, projM_mod1_pos, projM_mod2_neg, projM_mod2_pos, projM_mod3_neg, projM_mod3_pos;
-wire [0:`HV_DIMENSION-1] HypervectorOut_mod1_DO, HypervectorOut_mod2_DO, HypervectorOut_mod3_DO;
-wire xor_mod1_final, xor_mod2_final, xor_mod3_final, store_second;
-
-wire [`ceilLog2(`INPUT_CHANNELS)-1:0] channel_mod1;
-wire [`ceilLog2(`INPUT_CHANNELS)-1:0] channel_mod2;
-wire [`ceilLog2(`INPUT_CHANNELS)-1:0] channel_mod3;
+wire [0:`HV_DIMENSION-1] IMOut_D;
 
 // DATAPATH
 
@@ -92,11 +59,10 @@ assign LabelIn_DN = LabelIn_DI;
 genvar j;
 generate
 	for (j=0; j<`INPUT_CHANNELS; j=j+1) begin
-		assign ChannelsIn_DN[j] = ChannelsInput_DI[(`CHANNEL_WIDTH*j):(`CHANNEL_WIDTH-1+(`CHANNEL_WIDTH*j))];
+		assign ChannelsIn_DN[j] = ChannelsIn_DI[(`CHANNEL_WIDTH-1+(`CHANNEL_WIDTH*j)):(`CHANNEL_WIDTH*j)];
 	end
 endgenerate
 
-//registers for training/inference mode, training label, and incoming data
 integer i;
 always @(posedge Clk_CI) begin
 	if (Reset_RI) begin
@@ -110,123 +76,37 @@ always @(posedge Clk_CI) begin
 	end
 end
 
-
-assign addr_mod1 = cycle_count;
-assign addr_mod2 = cycle_count + `FIRST_MODALITY_CHANNELS;
-assign addr_mod3 = cycle_count + `FIRST_MODALITY_CHANNELS + `SECOND_MODALITY_CHANNELS;
-
 // get current feature value
-assign ChannelFeature_mod1_D = ChannelsIn_DP[channel_mod1];
-assign ChannelFeature_mod2_D = ChannelsIn_DP[channel_mod2];
-assign ChannelFeature_mod3_D = ChannelsIn_DP[channel_mod3];
+assign ChannelFeature_D = ChannelsIn_DP[CycleCntr_SP];
 
 // cellular automaton
-//cellular_automaton Cell_Auto(
-//	.Clk_CI(Clk_CI),
-//	.Reset_RI(Reset_RI),
-//	.Enable_SI(CellAutoEN_S),
-//	.Clear_SI(CellAutoCLR_S),
-//	.CellValueOut_DO(IMOut_D),
-//	.projM_neg(projM_neg),
-//	.projM_pos(projM_pos)
-//);
-
-//somehow get projM_pos, projM_neg and IMout_D from this block
-//channel_vectors_retr channel_vectors_retr(
-	//.Clk_CI(Clk_CI),
-	//.Reset_RI(Reset_RI),
-	//.Enable_SI(CellAutoEN_S),
-	//.Clear_SI(CellAutoCLR_S),
-//	.channel_mod1.(addr_mod1),
-//	.channel_mod2.(addr_mod2),
-//	.channel_mod3.(addr_mod3),
-//	.CellValueOut_mod1_DO(IMOut_mod1_D),
-//	.projM_mod1_neg(projM_mod1_neg),
-//	.projM_mod1_pos(projM_mod1_pos),
-//	.CellValueOut_mod2_DO(IMOut_mod2_D),
-//	.projM_mod2_neg(projM_mod2_neg),
-//	.projM_mod2_pos(projM_mod2_pos),
-//	.CellValueOut_mod3_DO(IMOut_mod3_D),
-//	.projM_mod3_neg(projM_mod3_neg),
-//	.projM_mod3_pos(projM_mod3_pos)
-	//.cycle_count(CycleCntr_SP)
-//);
+cellular_automaton Cell_Auto(
+	.Clk_CI(Clk_CI),
+	.Reset_RI(Reset_RI),
+	.Enable_SI(CellAutoEN_S),
+	.Clear_SI(CellAutoCLR_S),
+	.CellValueOut_DO(IMOut_D)
+);
 
 // accumulator
-spatial_accumulator Spat_Accum_mod1(
+spatial_accumulator Spat_Accum(
 	.Clk_CI(Clk_CI),
 	.Reset_RI(Reset_RI),
-	.Enable_SI(AccumulatorEN_mod1_S),
-	.xor_final(xor_mod1_final),
-	.store_second(store_second)
+	.Enable_SI(AccumulatorEN_S),
 	.FirstHypervector_SI(FirstHypervector_S),
-	.HypervectorIn_DI(IMOut_mod1_D),
-	.projM_negIN(projM_mod1_neg),
-	.projM_posIN(projM_mod1_pos),
-	.FeatureIn_DI(ChannelFeature_mod1_D),
-	.HypervectorOut_DO(HypervectorOut_mod1_DO),
+	.HypervectorIn_DI(IMOut_D),
+	.FeatureIn_DI(ChannelFeature_D),
+	.HypervectorOut_DO(HypervectorOut_DO)
 );
-
-spatial_accumulator Spat_Accum_mod2(
-	.Clk_CI(Clk_CI),
-	.Reset_RI(Reset_RI),
-	.Enable_SI(AccumulatorEN_mod2_S),
-	.xor_final(xor_mod2_final),
-	.store_second(store_second)
-	.FirstHypervector_SI(FirstHypervector_S),
-	.HypervectorIn_DI(IMOut_mod2_D),
-	.projM_negIN(projM_mod2_neg),
-	.projM_posIN(projM_mod2_pos),
-	.FeatureIn_DI(ChannelFeature_mod2_D),
-	.HypervectorOut_DO(HypervectorOut_mod2_DO),
-);
-
-spatial_accumulator Spat_Accum_mod3(
-	.Clk_CI(Clk_CI),
-	.Reset_RI(Reset_RI),
-	.Enable_SI(AccumulatorEN_mod3_S),
-	.xor_final(xor_mod3_final),
-	.store_second(store_second)
-	.FirstHypervector_SI(FirstHypervector_S),
-	.HypervectorIn_DI(IMOut_mod3_D),
-	.projM_negIN(projM_mod3_neg),
-	.projM_posIN(projM_mod3_pos),
-	.FeatureIn_DI(ChannelFeature_mod3_D),
-	.HypervectorOut_DO(HypervectorOut_mod3_DO),
-);
-
-genvar k;
-for (k=0; k<`HV_DIMENSION; k=k+1) begin
-	//take majority of 3 modalities
-	assign HypervectorOut_DO[k]  = (HypervectorOut_mod1_DO[k] && HypervectorOut_mod2_DO[k]) || (HypervectorOut_mod1_DO[k] && HypervectorOut_mod3_DO[k]) || (HypervectorOut_mod2_DO[k] && HypervectorOut_mod3_DO[k]);
-end
-
 
 assign ModeOut_SO = ModeIn_SP;
 assign LabelOut_DO = LabelIn_DP;
 
 // CONTROLLER
+
 // signals for looping through channels
-assign LastChannel_S = (CycleCntr_SP == `THIRD_MODALITY_CHANNELS-1);
+assign LastChannel_S = (CycleCntr_SP == `INPUT_CHANNELS-1);
 assign CycleCntr_SN = CycleCntr_SP + 1;
-// Want to store channel into second_channel register on either 2nd channel, 34th channel, or 111th channel
-//assign store_second = (CycleCntr_SP == {`ceilLog2(`INPUT_CHANNELS)-1{1'b0},1'b1} || CycleCntr_SP == {`ceilLog2(`INPUT_CHANNELS)-6{1'b0},6'b100001} || CycleCntr_SP == {`ceilLog2(`INPUT_CHANNELS)-7{1'b0},7'b1101110} )
-assign store_second = (CycleCntr_SP == {`ceilLog2(`INPUT_CHANNELS)-1{1'b0},1'b1});
-// Want to XOR and add into accumulation on 32nd channel, 109th channel or 214th channel
-assign xor_mod1_final = (CycleCntr_SP == {`ceilLog2(`INPUT_CHANNELS)-5{1'b0},5'b11111});
-assign xor_mod2_final = (CycleCntr_SP == {`ceilLog2(`INPUT_CHANNELS)-7{1'b0},7'b1101100});
-assign xor_mod3_final = (CycleCntr_SP == {`ceilLog2(`INPUT_CHANNELS)-8{1'b0},8'b11010101});
-
-//modalities enabled until final channel for that modality
-assign mod1_run = (CycleCntr_SP <= {`ceilLog2(`INPUT_CHANNELS)-5{1'b0},5'b11111});
-assign mod2_run = (CycleCntr_SP <= {`ceilLog2(`INPUT_CHANNELS)-7{1'b0},7'b1101100});
-assign mod3_run = (CycleCntr_SP <= {`ceilLog2(`INPUT_CHANNELS)-8{1'b0},8'b11010101});
-
-//enable each modality
-assign AccumulatorEN_mod1_S = AccumulatorEN_S && mod1_run;
-assign AccumulatorEN_mod2_S = AccumulatorEN_S && mod2_run;
-assign AccumulatorEN_mod2_S = AccumulatorEN_S && mod3_run;
-
 // FSM
 always @(*) begin
 	// default values
@@ -252,10 +132,6 @@ always @(*) begin
 		end
 		DATA_RECEIVED: begin
 			next_state = ACCUM_FED;
-			spatial_valid = 1'b1;
-			spatial_ready = 1'b1;
-			if (mod1_run && mod2_run && mod3_run)
-
 			AccumulatorEN_S = 1'b1;
 			CellAutoEN_S = 1'b1;
 			CycleCntrEN_S = 1'b1;

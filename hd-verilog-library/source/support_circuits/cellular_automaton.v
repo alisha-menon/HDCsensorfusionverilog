@@ -14,9 +14,7 @@ module cellular_automaton #
 	input Enable_SI, Clear_SI,
 
 	// output value
-	output [0:WIDTH-1] CellValueOut_DO,
-	output [0:WIDTH-1] projM_pos,
-	output [0:WIDTH-1] projM_neg
+	output [0:WIDTH-1] CellValueOut_DO
 );
 
 // cell registers
